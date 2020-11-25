@@ -288,11 +288,12 @@ class YoutubeEntryListBaseInfoExtractor(YoutubeBaseInfoExtractor):
     # Extract entries from page with "Load more" button
     def _entries(self, page, playlist_id):
         more_widget_html = content_html = page
+        mobj_reg = r'(?:(?:data-uix-load-more-href="[^"]+?;continuation=)|(?:"continuation":"))(?P<more>[^"]+)"'
         for page_num in itertools.count(1):
             for entry in self._process_page(content_html):
                 yield entry
 
-            mobj = re.search(r'data-uix-load-more-href="/?(?P<more>[^"]+)"', more_widget_html)
+            mobj = re.search(mobj_reg, more_widget_html)
             if not mobj:
                 break
 
@@ -303,7 +304,7 @@ class YoutubeEntryListBaseInfoExtractor(YoutubeBaseInfoExtractor):
                     # Downloading page may result in intermittent 5xx HTTP error
                     # that is usually worked around with a retry
                     more = self._download_json(
-                        'https://www.youtube.com/%s' % mobj.group('more'), playlist_id,
+                        'https://www.youtube.com/browse_ajax?ctoken=%s' % mobj.group('more'), playlist_id,
                         'Downloading page #%s%s'
                         % (page_num, ' (retry #%d)' % count if count else ''),
                         transform_source=uppercase_escape,
@@ -360,7 +361,7 @@ class YoutubePlaylistBaseInfoExtractor(YoutubeEntryListBaseInfoExtractor):
 class YoutubePlaylistsBaseInfoExtractor(YoutubeEntryListBaseInfoExtractor):
     def _process_page(self, content):
         for playlist_id in orderedSet(re.findall(
-                r'<h3[^>]+class="[^"]*yt-lockup-title[^"]*"[^>]*><a[^>]+href="/?playlist\?list=([0-9A-Za-z-_]{10,})"',
+                r'"/?playlist\?list=([0-9A-Za-z-_]{10,})"',
                 content)):
             yield self.url_result(
                 'https://www.youtube.com/playlist?list=%s' % playlist_id, 'YoutubePlaylist')
@@ -576,6 +577,22 @@ class YoutubeIE(YoutubeBaseInfoExtractor):
                 'dislike_count': int,
                 'start_time': 1,
                 'end_time': 9,
+            }
+        },
+        {
+            'url': 'https://www.youtube.com/watch?v=PA4gbtKWNAI',
+            'note': 'Test video with age protection',
+            'info_dict': {
+                'id': 'PA4gbtKWNAI',
+                'ext': 'mp4',
+                'upload_date': '20201028',
+                'title': 'Big Buck Bunny (TEST) (Age-restricted)',
+                'description': 'An age restricted test video for youtube-dl',
+                'duration': 635,
+                'uploader': 'Ali Sherief',
+                'uploader_id': 'UCi1TsEkfcMaYSadGms3UnqA',
+                'uploader_url': r're:https?://(?:www\.)?youtube\.com/channel/UCi1TsEkfcMaYSadGms3UnqA',
+                'age_limit': 18,
             }
         },
         {
@@ -1955,7 +1972,10 @@ class YoutubeIE(YoutubeBaseInfoExtractor):
 
                 if cipher:
                     if 's' in url_data or self._downloader.params.get('youtube_include_dash_manifest', True):
-                        ASSETS_RE = r'"assets":.+?"js":\s*("[^"]+")'
+                        ASSETS_RE = (
+                            r'<script[^>]+\bsrc=("[^"]+")[^>]+\bname=["\']player_ias/base',
+                            r'"jsUrl"\s*:\s*("[^"]+")',
+                            r'"assets":.+?"js":\s*("[^"]+")')
                         jsplayer_url_json = self._search_regex(
                             ASSETS_RE,
                             embed_webpage if age_gate else video_webpage,
